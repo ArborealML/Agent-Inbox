@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            archive: agent-inbox-linux-x86_64.tar.gz
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            archive: agent-inbox-windows-x86_64.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test --locked
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package and smoke-test Linux archive
+        if: runner.os == 'Linux'
+        run: |
+          tar -czf "${{ matrix.archive }}" -C "target/${{ matrix.target }}/release" agent-inbox
+          mkdir smoke
+          tar -xzf "${{ matrix.archive }}" -C smoke
+          ./smoke/agent-inbox --version
+      - name: Package and smoke-test Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/agent-inbox.exe" -DestinationPath "${{ matrix.archive }}"
+          Expand-Archive "${{ matrix.archive }}" -DestinationPath smoke
+          ./smoke/agent-inbox.exe --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'push'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish both archives and checksums
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          sha256sum agent-inbox-linux-x86_64.tar.gz agent-inbox-windows-x86_64.zip > SHA256SUMS
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes
+          fi
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+          gh release upload "$TAG" agent-inbox-linux-x86_64.tar.gz agent-inbox-windows-x86_64.zip SHA256SUMS --clobber
+          gh release edit "$TAG" --draft=false

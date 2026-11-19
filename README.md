@@ -40,6 +40,10 @@ The inbox uses bundled SQLite and one dispatcher lock per local directory. Rust'
 
 Use an owner-only directory on a local disk with platform-appropriate permissions. Anyone who can modify the inbox can send instructions to its configured threads. The database retains message bodies. The executable passed to `watch --sender PATH` must be trusted. It receives separate arguments without a shell. Agent-Inbox leaves session startup and resume to the operator.
 
+## Releases
+
+Push a version tag such as `v0.1.0` to run the test suite and build x86-64 binaries for Linux (GNU) and Windows (MSVC). The release workflow extracts each archive and runs the packaged executable before publishing both archives and `SHA256SUMS` together on GitHub Releases. Use **Actions → Release → Run workflow** for a packaging rehearsal that uploads workflow artifacts only.
+
 ## Development
 
 `cargo fmt --check` and `cargo test --locked` exercise busy/ready transitions, batching, explicit wait keys, pause precedence, retry identity, restart, and delivery through a real dispatcher process to a fake sender. CI runs on Linux, macOS, and Windows. No live Codex session is required for these checks.
